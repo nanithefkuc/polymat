@@ -45,6 +45,15 @@ impl WeakPopovScratch {
         self.leading_rows.capacity()
     }
 
+    /// Returns the heap bytes this scratch retains for the schedule.
+    ///
+    /// A consumer reporting its own retained memory adds this instead of
+    /// multiplying [`WeakPopovScratch::capacity`] by an assumed entry width.
+    #[must_use]
+    pub fn retained_bytes(&self) -> usize {
+        self.leading_rows.capacity() * size_of::<Option<usize>>()
+    }
+
     fn prepare(&mut self, columns: usize) -> Result<(), ReduceError> {
         if self.leading_rows.capacity() < columns {
             self.leading_rows

@@ -111,7 +111,9 @@ fn warmed_schedule_reduces_without_allocating() {
     let mut warm = basis(&[&[0, 1], &[1]], &[&[1], &[]], capacity);
     weak_popov_scratch::<Gf8B, _>(&mut warm, &shifts, &mut scratch).unwrap();
     let retained_capacity = scratch.capacity();
+    let retained_bytes = scratch.retained_bytes();
     assert!(retained_capacity >= shifts.len());
+    assert!(retained_bytes >= retained_capacity);
 
     let mut first = basis(&[&[0, 1], &[1]], &[&[1], &[]], capacity);
     let mut second = basis(&[&[1, 1], &[1]], &[&[0, 1], &[1]], capacity);
@@ -121,6 +123,7 @@ fn warmed_schedule_reduces_without_allocating() {
     weak_popov_scratch::<Gf8B, _>(black_box(&mut second), &shifts, &mut scratch).unwrap();
     let allocations = ALLOCATIONS.load(Ordering::SeqCst) - before;
     assert_eq!(scratch.capacity(), retained_capacity);
+    assert_eq!(scratch.retained_bytes(), retained_bytes);
 
     assert_eq!(allocations, 0);
 }

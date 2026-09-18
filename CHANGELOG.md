@@ -16,6 +16,9 @@ All notable changes to this project are documented here. The format follows
   and adapter-metadata failures without erasing consumer-native errors.
 - A full-rescan scalar reducer behind `internals` provides an untuned control
   for the cached collision schedule.
+- `WeakPopovScratch::retained_bytes` reports the heap bytes the schedule
+  holds, so a consumer summing its own retained memory does not multiply
+  `capacity` by an assumed entry width.
 
 ### Changed
 

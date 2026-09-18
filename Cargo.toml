@@ -1,0 +1,42 @@
+[package]
+name = "polymat"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+license = "MIT"
+publish = false
+description = "Matrices and modules over univariate polynomial rings over finite fields."
+repository = "https://github.com/nanithefkuc/polymat"
+readme = "README.md"
+homepage = "https://github.com/nanithefkuc/polymat"
+categories = ["algorithms", "mathematics", "no-std"]
+exclude = [
+    "/.github",
+    "/.gitignore",
+    "/.lucid",
+    "/.sheaf",
+    "/AGENTS.md",
+    "/BENCHMARKS.md",
+    "/crate.just",
+    "/justfile",
+]
+
+[features]
+default = ["std", "simd"]
+std = ["fgf/std"]
+simd = ["std", "fgf/simd"]
+# Unstable implementation APIs for differential checks and experimentation.
+# This feature changes reachability only.
+internals = []
+
+[dependencies]
+fgf = { version = "=1.1.1", default-features = false }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.profiling]
+inherits = "release"
+debug = "full"
+strip = "none"

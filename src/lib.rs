@@ -1,0 +1,24 @@
+//! Polynomial matrices and finitely generated row modules over Fq\[x\].
+//!
+//! The public reducer operates on caller-owned polynomial rows or indexed,
+//! slab-backed bases. It preserves the generated row module and produces
+//! shifted weak Popov form without imposing a storage representation.
+
+#![cfg_attr(not(feature = "std"), no_std)]
+#![forbid(unsafe_code)]
+#![warn(missing_docs, missing_debug_implementations)]
+#![warn(clippy::pedantic)]
+
+extern crate alloc;
+
+mod error;
+mod reduction;
+
+#[cfg(feature = "internals")]
+pub mod internals;
+
+pub use error::ReduceError;
+pub use reduction::{
+    PopovLeadingTerm, WeakPopovBasis, WeakPopovRow, WeakPopovScratch, weak_popov,
+    weak_popov_basis_scratch, weak_popov_scratch,
+};

@@ -97,3 +97,21 @@ fn cached_schedule_matches_full_rescan_in_prime_field() {
             .count(),
     );
 }
+
+#[test]
+fn cached_schedule_matches_full_rescan_on_repeated_degree_ties() {
+    let rows = vec![
+        Row::<Gf8B>::new(vec![vec![b(1), b(1)], vec![b(1), b(1)]]),
+        Row::<Gf8B>::new(vec![vec![b(1), b(1)], vec![b(1)]]),
+        Row::<Gf8B>::new(vec![vec![b(1), b(1)], Vec::new()]),
+        Row::<Gf8B>::new(vec![vec![b(1), b(1)], vec![b(0), b(1)]]),
+    ];
+    let mut cached = IndexedBasis(rows.clone());
+    let mut reference = IndexedBasis(rows);
+
+    weak_popov_basis_scratch::<Gf8B, _>(&mut cached, &[0, 0], &mut WeakPopovScratch::new())
+        .unwrap();
+    weak_popov_basis_reference::<Gf8B, _>(&mut reference, &[0, 0]).unwrap();
+
+    assert_eq!(cached, reference);
+}

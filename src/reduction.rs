@@ -4,6 +4,8 @@
 //! polynomial representation. Consumers supply row access and one shifted row
 //! update through [`WeakPopovRow`] or [`WeakPopovBasis`].
 
+use core::cmp::Ordering;
+
 use alloc::vec::Vec;
 
 use fgf::FieldKernels;
@@ -226,8 +228,9 @@ where
 ///
 /// # Errors
 ///
-/// Returns the row's native error or a checked [`ReduceError`]. A callback
-/// failure may leave the basis partially reduced.
+/// Returns the row's native error or a checked [`ReduceError`]. Any failure
+/// reported after an applied row update, including a callback failure and a
+/// later validation failure, may leave the basis partially reduced.
 pub fn weak_popov<F, R>(basis: &mut [R], shifts: &[usize]) -> Result<(), R::Error>
 where
     F: FieldKernels,
@@ -266,8 +269,10 @@ where
 /// [`ReduceError::DegreeOverflow`] for an unrepresentable shifted degree,
 /// [`ReduceError::InvalidLeadingTerm`] when cached metadata disagrees with the
 /// adapter's degree and coefficient surface, [`ReduceError::Diverged`] for a
-/// non-decreasing update, or the basis-native update error. A callback failure
-/// may leave the basis partially reduced.
+/// non-decreasing update, or the basis-native update error. Any failure
+/// reported after an applied row update, including a callback failure and a
+/// later validation failure, may leave the basis partially reduced. No
+/// rollback is performed.
 pub fn weak_popov_basis_scratch<F, B>(
     basis: &mut B,
     shifts: &[usize],
@@ -557,15 +562,23 @@ where
     F: FieldKernels,
     B: WeakPopovBasis<F> + ?Sized,
 {
-    let (target, pivot, target_term, pivot_term) = if left_term.degree >= right_term.degree {
+    let target_is_left = match left_term.degree.cmp(&right_term.degree) {
+        Ordering::Greater => true,
+        Ordering::Less => false,
+        Ordering::Equal => left < right,
+    };
+    let (target, pivot, target_term, pivot_term) = if target_is_left {
         (left, right, left_term, right_term)
     } else {
         (right, left, right_term, left_term)
     };
     let target_coefficient = basis.coefficient(target, target_term.column, target_term.degree);
-    let pivot_coefficient = basis.coefficient(pivot, pivot_term.column, pivot_term.degree);
-    if target_coefficient.is_zero() || pivot_coefficient.is_zero() {
+    if target_coefficient.is_zero() {
         return Err(ReduceError::InvalidLeadingTerm { row: target }.into());
+    }
+    let pivot_coefficient = basis.coefficient(pivot, pivot_term.column, pivot_term.degree);
+    if pivot_coefficient.is_zero() {
+        return Err(ReduceError::InvalidLeadingTerm { row: pivot }.into());
     }
     let scale = target_coefficient.mul(pivot_coefficient.inv()).neg();
     let shift = target_term.degree - pivot_term.degree;

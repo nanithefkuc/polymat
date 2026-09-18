@@ -26,3 +26,11 @@ All notable changes to this project are documented here. The format follows
 - Cancelling row updates use the negative leading-coefficient ratio. Binary
   field results are unchanged, while odd-characteristic fields now cancel the
   advertised leading term correctly.
+- **Breaking, relative to `gfm`:** a collision between two rows of equal
+  leading degree reduces the lower-indexed row, so the result no longer
+  depends on the order in which the cached schedule discovered the pair. Rows
+  of distinct leading degree, and therefore every basis without a tie, reduce
+  exactly as before; a consumer that recorded output for a tied basis records
+  it again.
+- `ReduceError::InvalidLeadingTerm` names the row whose advertised leading
+  coefficient is zero rather than always naming the reduction target.

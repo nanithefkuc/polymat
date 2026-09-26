@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Scalar shifted approximant bases: `approximant_basis` runs the
+  discrepancy recurrence from `I_m` over per-column orders (zero orders
+  impose nothing), picks the minimum shifted-leading pivot, cancels
+  against the old pivot, multiplies it by `x` last, and reports the
+  independent-constraint count with canonical Popov output agreeing
+  against the congruence oracle.
 - Generic congruence module bases: `congruence_basis` spans `p F = 0 mod
   M[j]` via the `[F; -diag(M)]` left-kernel projection with monic modulus
   normalization, unit-modulus identity fast path, zero-modulus rejection,

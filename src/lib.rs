@@ -14,6 +14,7 @@
 
 extern crate alloc;
 
+mod approximant;
 mod congruence;
 mod error;
 mod kernel;
@@ -24,6 +25,7 @@ mod reduction;
 #[cfg(feature = "internals")]
 pub mod internals;
 
+pub use approximant::ApproximantBasis;
 pub use congruence::CongruenceCertificate;
 pub use error::ReduceError;
 pub use kernel::{ExactSolution, MembershipWitness};

@@ -33,10 +33,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "poly-ring"
+version = "1.0.0"
+dependencies = [
+ "fgf",
+]
+
+[[package]]
 name = "polymat"
 version = "0.1.0"
 dependencies = [
  "fgf",
+ "poly-ring",
 ]
 
 [[package]]
@@ -94,13 +102,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d107c80dd656e1a2c254dfb1d57ece73b7f515b8a8684c270c23cab68f4a440d"
 
 [[patch.unused]]
-name = "poly-ring"
+name = "butterfly-fft"
 version = "1.0.0"
 
 [[patch.unused]]
 name = "gfm"
 version = "1.0.1"
-
-[[patch.unused]]
-name = "butterfly-fft"
-version = "1.0.0"

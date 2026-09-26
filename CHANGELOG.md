@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Owned `PolynomialMatrix` over `poly-ring` polynomials: explicit m-by-n
+  row-major storage with 0-by-n and m-by-0 shapes, checked construction and
+  normalization-preserving setters, transpose, destination-first
+  `add_into`/`sub_into`/`mul_into`/`mul_truncated_into` with untouched
+  destinations on geometry failure, `evaluate_to_vec` to row-major field
+  elements, an owned weak-Popov reduction adapter, and common-offset
+  signed-shift preparation. `MatrixError` carries geometry, allocation,
+  shift-count, shift-span, and polynomial failures.
 - Shifted weak-Popov reduction for caller-owned rows and indexed, slab-backed
   bases: `PopovLeadingTerm`, `WeakPopovRow`, `WeakPopovBasis`,
   `WeakPopovScratch`, `weak_popov`, `weak_popov_scratch`, and

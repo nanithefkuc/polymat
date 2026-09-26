@@ -31,6 +31,7 @@ internals = []
 
 [dependencies]
 fgf = { version = "=1.2.1", default-features = false }
+poly-ring = { git = "https://github.com/nanithefkuc/poly-ring", rev = "ed99ccea0d15da2248c033e179c8579ecef4af3e", default-features = false }
 
 [package.metadata.docs.rs]
 all-features = true

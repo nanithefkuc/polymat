@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Generic congruence module bases: `congruence_basis` spans `p F = 0 mod
+  M[j]` via the `[F; -diag(M)]` left-kernel projection with monic modulus
+  normalization, unit-modulus identity fast path, zero-modulus rejection,
+  and canonical shifted Popov output as an m-by-m full-rank basis.
 - Ordered weak and canonical shifted Popov forms: `order_weak_popov` with
   the applied row permutation, `reduce_popov` and `reduce_popov_tracked`
   with `U A = R` through ordering, monic scaling, and pivot-column

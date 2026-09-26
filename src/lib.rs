@@ -14,6 +14,7 @@
 
 extern crate alloc;
 
+mod congruence;
 mod error;
 mod kernel;
 mod matrix;

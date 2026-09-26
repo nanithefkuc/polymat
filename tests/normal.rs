@@ -169,94 +169,6 @@ fn smith_minors_match_determinantal_divisors() {
 }
 
 #[test]
-fn determinant_matches_leibniz_with_signs() {
-    // Swap matrix [[0,1],[1,0]] has determinant -1 = 1 in char 2, -1 odd.
-    let swap8 = PolynomialMatrix::from_entries(
-        2,
-        2,
-        alloc::vec![
-            Polynomial::zero(),
-            poly_b(&[b(1)]),
-            poly_b(&[b(1)]),
-            Polynomial::zero(),
-        ],
-    )
-    .unwrap();
-    assert_eq!(
-        swap8.determinant().unwrap(),
-        swap8.determinant_leibniz().unwrap()
-    );
-    let swap31 = PolynomialMatrix::from_entries(
-        2,
-        2,
-        alloc::vec![
-            Polynomial::zero(),
-            poly_p(&[p(1)]),
-            poly_p(&[p(1)]),
-            Polynomial::zero(),
-        ],
-    )
-    .unwrap();
-    assert_eq!(
-        swap31.determinant().unwrap(),
-        swap31.determinant_leibniz().unwrap()
-    );
-    let mut neg_one = poly_p(&[p(1)]);
-    neg_one.scale_assign(p(1).neg());
-    assert_eq!(swap31.determinant().unwrap(), neg_one);
-    // Singular input gives zero; 0-by-0 gives one.
-    let singular = PolynomialMatrix::from_entries(
-        2,
-        2,
-        alloc::vec![
-            poly_b(&[b(1), b(1)]),
-            poly_b(&[b(1)]),
-            poly_b(&[b(1), b(1)]),
-            poly_b(&[b(1)]),
-        ],
-    )
-    .unwrap();
-    assert!(singular.determinant().unwrap().is_zero());
-    let empty = PolynomialMatrix::<Gf8B>::zeros(0, 0).unwrap();
-    assert!(empty.determinant().unwrap().is_one());
-    // 3x3 agreement with Leibniz, both fields.
-    let three = PolynomialMatrix::from_entries(
-        3,
-        3,
-        alloc::vec![
-            poly_b(&[b(1), b(1)]),
-            poly_b(&[b(2)]),
-            poly_b(&[b(0), b(1)]),
-            poly_b(&[b(1)]),
-            poly_b(&[b(1), b(0), b(1)]),
-            poly_b(&[b(3)]),
-            poly_b(&[b(0), b(1)]),
-            poly_b(&[b(4)]),
-            poly_b(&[b(1), b(1), b(1)]),
-        ],
-    )
-    .unwrap();
-    assert_eq!(
-        three.determinant().unwrap(),
-        three.determinant_leibniz().unwrap()
-    );
-    assert!(three.determinant_leibniz().is_ok());
-    assert!(
-        PolynomialMatrix::<Gf8B>::zeros(2, 3)
-            .unwrap()
-            .determinant()
-            .is_err()
-    );
-    assert!(
-        PolynomialMatrix::<Gf8B>::zeros(0, 0)
-            .unwrap()
-            .determinant_leibniz()
-            .unwrap()
-            .is_one()
-    );
-}
-
-#[test]
 fn hermite_euclidean_remainder_path_holds() {
     // Column entries sharing a non-trivial gcd force the Euclidean
     // remainder loop (not just exact elimination): gcd(x^2, 1+x) = 1.
@@ -319,12 +231,6 @@ fn error_arms_reject_bad_geometry() {
         PolynomialMatrix::<Gf8B>::zeros(2, 3)
             .unwrap()
             .polynomial_inverse()
-            .is_err()
-    );
-    assert!(
-        PolynomialMatrix::<Gf8B>::zeros(7, 7)
-            .unwrap()
-            .determinant_leibniz()
             .is_err()
     );
     let tiny = PolynomialMatrix::from_entries(
@@ -431,6 +337,38 @@ fn smith_bezout_paths_reduce_pivot_degree() {
         let (_, remainder) = second.div_rem(&first).unwrap();
         assert!(remainder.is_zero());
     }
+}
+
+#[test]
+fn smith_bezout_witnesses_stay_unimodular() {
+    // Regression: the Bezout second row once used -(p/g) and (e/g),
+    // giving determinant (s*e + t*p)/g instead of one. On [[x, x+1],
+    // [0, x]] the transformation changed the determinant; the diagonal
+    // below is the true Smith form with unit witnesses.
+    let input = PolynomialMatrix::from_entries(
+        2,
+        2,
+        alloc::vec![
+            poly_b(&[b(0), b(1)]),
+            poly_b(&[b(1), b(1)]),
+            Polynomial::zero(),
+            poly_b(&[b(0), b(1)]),
+        ],
+    )
+    .unwrap();
+    let smith = input.smith_form().unwrap();
+    assert_eq!(mul(&mul(&smith.left, &input), &smith.right), smith.form);
+    let left_det = smith.left.determinant().unwrap();
+    assert!(left_det.degree().is_none_or(|degree| degree == 0) && !left_det.is_zero());
+    let right_det = smith.right.determinant().unwrap();
+    assert!(right_det.degree().is_none_or(|degree| degree == 0) && !right_det.is_zero());
+    // Determinant preserved up to units: det(input) = det(form)/det(U V).
+    let input_det = input.determinant().unwrap();
+    let form_det = smith.form.determinant().unwrap();
+    let witness_det = left_det.multiply(&right_det).unwrap();
+    let scaled = form_det.div_rem(&witness_det).unwrap();
+    assert!(scaled.1.is_zero());
+    assert_eq!(scaled.0.monic(), input_det.monic());
 }
 
 #[test]

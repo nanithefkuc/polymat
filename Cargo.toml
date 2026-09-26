@@ -41,3 +41,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 inherits = "release"
 debug = "full"
 strip = "none"
+
+[[test]]
+name = "normal_oracle"
+required-features = ["internals"]

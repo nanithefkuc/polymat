@@ -268,45 +268,6 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         Ok(determinant)
     }
 
-    /// Returns the Leibniz determinant of a tiny square matrix: the signed
-    /// sum over all permutations.
-    ///
-    /// An independent oracle for [`PolynomialMatrix::determinant`] on small
-    /// inputs; production code paths use Bareiss elimination.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`MatrixError::GeometryOverflow`] for a non-square or large
-    /// input (more than 6 rows), plus polynomial errors.
-    pub fn determinant_leibniz(&self) -> Result<Polynomial<F>, MatrixError> {
-        let (rows, columns) = self.shape();
-        if rows != columns || rows > 6 {
-            return Err(MatrixError::GeometryOverflow {
-                context: "leibniz determinant shape",
-            });
-        }
-        if rows == 0 {
-            return Polynomial::one().map_err(MatrixError::Polynomial);
-        }
-        let mut total = Polynomial::zero();
-        let mut permutation: Vec<usize> = (0..rows).collect();
-        loop {
-            let mut term = Polynomial::one().map_err(MatrixError::Polynomial)?;
-            for (row, &column) in permutation.iter().enumerate() {
-                let entry = self.entry(row, column).cloned().unwrap_or_default();
-                term = term.multiply(&entry)?;
-            }
-            if permutation_sign(&permutation) < 0 {
-                term.scale_assign(F::Elem::ONE.neg());
-            }
-            total.add_assign(&term)?;
-            if !next_permutation(&mut permutation) {
-                break;
-            }
-        }
-        Ok(total)
-    }
-
     /// Returns the polynomial inverse with `left * self = I` and
     /// `self * left = I`, or `None` for a non-unimodular matrix.
     ///
@@ -346,6 +307,9 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     /// Returns the monic gcd of all k-by-k minors: the k-th determinantal
     /// divisor, an independent check of Smith invariant factors.
     ///
+    /// Evaluated through the Leibniz oracle, so sizes above 6 rows report
+    /// the oracle's shape error.
+    ///
     /// # Errors
     ///
     /// Returns [`MatrixError::GeometryOverflow`] for an out-of-range `k`,
@@ -367,7 +331,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
                     }
                 }
                 let minor = PolynomialMatrix::from_entries(size, size, entries)?;
-                let determinant = minor.determinant_leibniz()?;
+                let determinant = leibniz_determinant(&minor)?;
                 accumulator = Some(match accumulator {
                     None => determinant.monic(),
                     Some(current) => current.gcd(&determinant)?,
@@ -612,8 +576,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             let mut next_pivot = relation.a_cofactor.multiply(&left_value)?;
             let term = relation.b_cofactor.multiply(&right_value)?;
             next_pivot.add_assign(&term)?;
-            let mut next_other = quotient.negated().multiply(&left_value)?;
-            let term = other_quotient.multiply(&right_value)?;
+            let mut next_other = other_quotient.negated().multiply(&left_value)?;
+            let term = quotient.multiply(&right_value)?;
             next_other.add_assign(&term)?;
             form.set_entry(row, pivot, next_pivot)?;
             form.set_entry(row, column, next_other)?;
@@ -625,8 +589,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             let mut next_pivot = relation.a_cofactor.multiply(&left_value)?;
             let term = relation.b_cofactor.multiply(&right_value)?;
             next_pivot.add_assign(&term)?;
-            let mut next_other = quotient.negated().multiply(&left_value)?;
-            let term = other_quotient.multiply(&right_value)?;
+            let mut next_other = other_quotient.negated().multiply(&left_value)?;
+            let term = quotient.multiply(&right_value)?;
             next_other.add_assign(&term)?;
             right.set_entry(row, pivot, next_pivot)?;
             right.set_entry(row, column, next_other)?;
@@ -656,8 +620,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             let mut next_pivot = relation.a_cofactor.multiply(&upper)?;
             let term = relation.b_cofactor.multiply(&lower)?;
             next_pivot.add_assign(&term)?;
-            let mut next_other = quotient.negated().multiply(&upper)?;
-            let term = other_quotient.multiply(&lower)?;
+            let mut next_other = other_quotient.negated().multiply(&upper)?;
+            let term = quotient.multiply(&lower)?;
             next_other.add_assign(&term)?;
             form.set_entry(pivot, column, next_pivot)?;
             form.set_entry(row, column, next_other)?;
@@ -669,8 +633,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             let mut next_pivot = relation.a_cofactor.multiply(&upper)?;
             let term = relation.b_cofactor.multiply(&lower)?;
             next_pivot.add_assign(&term)?;
-            let mut next_other = quotient.negated().multiply(&upper)?;
-            let term = other_quotient.multiply(&lower)?;
+            let mut next_other = other_quotient.negated().multiply(&upper)?;
+            let term = quotient.multiply(&lower)?;
             next_other.add_assign(&term)?;
             left.set_entry(pivot, column, next_pivot)?;
             left.set_entry(row, column, next_other)?;
@@ -703,6 +667,48 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         }
         Ok(None)
     }
+}
+
+/// Returns the Leibniz determinant of a tiny square matrix: the signed
+/// sum over all permutations.
+///
+/// A differential oracle for [`PolynomialMatrix::determinant`] on small
+/// inputs; reachable only through the `internals` facade. Production code
+/// paths use Bareiss elimination.
+///
+/// # Errors
+///
+/// Returns [`MatrixError::GeometryOverflow`] for a non-square or large
+/// input (more than 6 rows), plus polynomial errors.
+pub fn leibniz_determinant<F: FieldKernels>(
+    matrix: &PolynomialMatrix<F>,
+) -> Result<Polynomial<F>, MatrixError> {
+    let (rows, columns) = matrix.shape();
+    if rows != columns || rows > 6 {
+        return Err(MatrixError::GeometryOverflow {
+            context: "leibniz determinant shape",
+        });
+    }
+    if rows == 0 {
+        return Polynomial::one().map_err(MatrixError::Polynomial);
+    }
+    let mut total = Polynomial::zero();
+    let mut permutation: Vec<usize> = (0..rows).collect();
+    loop {
+        let mut term = Polynomial::one().map_err(MatrixError::Polynomial)?;
+        for (row, &column) in permutation.iter().enumerate() {
+            let entry = matrix.entry(row, column).cloned().unwrap_or_default();
+            term = term.multiply(&entry)?;
+        }
+        if permutation_sign(&permutation) < 0 {
+            term.scale_assign(F::Elem::ONE.neg());
+        }
+        total.add_assign(&term)?;
+        if !next_permutation(&mut permutation) {
+            break;
+        }
+    }
+    Ok(total)
 }
 
 /// Returns all k-subsets of `0..count` in lexicographic order.

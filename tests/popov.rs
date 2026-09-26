@@ -68,6 +68,7 @@ fn validators_distinguish_three_forms() {
     unreduced.reduce_weak_popov(&[0, 0]).unwrap();
     unreduced.order_weak_popov(&[0, 0]).unwrap();
     assert!(unreduced.is_ordered_weak_popov(&[0, 0]));
+    assert!(!unreduced.is_popov(&[0, 0]));
     // Duplicate leading columns are not weak.
     let duplicate = PolynomialMatrix::from_entries(
         2,
@@ -167,6 +168,63 @@ fn canonical_form_is_invariant_under_unimodular_change() {
 }
 
 #[test]
+fn canonical_form_is_invariant_full_rank_with_shifts() {
+    // Full-rank 3x3 module where column reduction between two pivots runs:
+    // row 2 carries an above-degree entry in pivot column 0 that the
+    // shifted order (column 0 first) keeps reducible.
+    let first = PolynomialMatrix::from_entries(
+        3,
+        3,
+        alloc::vec![
+            poly_b(&[b(1), b(1)]),
+            poly_b(&[b(1)]),
+            Polynomial::zero(),
+            poly_b(&[b(0), b(1), b(1)]),
+            poly_b(&[b(1), b(0), b(1)]),
+            poly_b(&[b(1)]),
+            poly_b(&[b(1), b(0), b(0), b(1)]),
+            poly_b(&[b(2)]),
+            poly_b(&[b(1), b(1)]),
+        ],
+    )
+    .unwrap();
+    let shifts = alloc::vec![2, 0, 1];
+    let mut second = first.clone();
+    // Unimodular change: row2 += x * row0; row1 += row0; then swap rows 0,1.
+    let x = poly_b(&[b(0), b(1)]);
+    for column in 0..3 {
+        let mut updated = second.entry(2, column).unwrap().clone();
+        let multiple = second.entry(0, column).unwrap().multiply(&x).unwrap();
+        updated.add_assign(&multiple).unwrap();
+        second.set_entry(2, column, updated).unwrap();
+        let mut updated = second.entry(1, column).unwrap().clone();
+        updated
+            .add_assign(second.entry(0, column).unwrap())
+            .unwrap();
+        second.set_entry(1, column, updated).unwrap();
+    }
+    let row0: Vec<_> = (0..3)
+        .map(|c| second.entry(0, c).unwrap().clone())
+        .collect();
+    let row1: Vec<_> = (0..3)
+        .map(|c| second.entry(1, c).unwrap().clone())
+        .collect();
+    for (c, e) in row0.iter().enumerate() {
+        second.set_entry(1, c, e.clone()).unwrap();
+    }
+    for (c, e) in row1.iter().enumerate() {
+        second.set_entry(0, c, e.clone()).unwrap();
+    }
+    let mut canonical_first = first.clone();
+    canonical_first.reduce_popov(&shifts).unwrap();
+    let mut canonical_second = second.clone();
+    canonical_second.reduce_popov(&shifts).unwrap();
+    assert!(canonical_first.is_popov(&shifts));
+    assert!(canonical_second.is_popov(&shifts));
+    assert_eq!(canonical_first, canonical_second);
+}
+
+#[test]
 fn tracked_canonical_preserves_transformation_identity() {
     let original = PolynomialMatrix::from_entries(
         2,
@@ -188,6 +246,8 @@ fn tracked_canonical_preserves_transformation_identity() {
     let mut dependent = original.clone();
     dependent.reduce_popov(&[0, 0]).unwrap();
     assert_eq!(dependent.shape(), (2, 2));
+    assert!(dependent.entry(1, 0).unwrap().is_zero());
+    assert!(dependent.entry(1, 1).unwrap().is_zero());
 }
 
 #[test]

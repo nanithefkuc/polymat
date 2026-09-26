@@ -19,6 +19,7 @@ use fgf::field::Elem;
 use fgf::kernel::FieldKernels;
 use poly_ring::Polynomial;
 
+use crate::ReduceError;
 use crate::matrix::{MatrixError, PolynomialMatrix};
 
 impl<F: FieldKernels> PolynomialMatrix<F> {
@@ -46,7 +47,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         // increasing leading column, then shifted degree.
         let mut keys: Vec<(usize, usize, usize)> = Vec::with_capacity(rows);
         for row in 0..rows {
-            match self.leading_key(row, shifts) {
+            match self.leading_key(row, shifts)? {
                 None => keys.push((1, usize::MAX, usize::MAX)),
                 Some((shifted, column)) => keys.push((0, column, shifted)),
             }
@@ -73,7 +74,10 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`PolynomialMatrix::reduce_weak_popov`].
+    /// Returns the same errors as [`PolynomialMatrix::reduce_weak_popov`],
+    /// plus polynomial division, multiplication, and addition errors from
+    /// the column-reduction remainders (the divisor is never zero, so in
+    /// practice these are degree or reservation failures).
     pub fn reduce_popov(&mut self, shifts: &[usize]) -> Result<(), MatrixError> {
         self.reduce_weak_popov(shifts)?;
         self.order_weak_popov(shifts)?;
@@ -87,7 +91,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`PolynomialMatrix::reduce_weak_popov`].
+    /// Returns the same errors as [`PolynomialMatrix::reduce_popov`].
     pub fn reduce_popov_tracked(
         &mut self,
         shifts: &[usize],
@@ -100,6 +104,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
 
     /// Reports whether every nonzero row has a distinct shifted leading
     /// column.
+    ///
+    /// A shifted-degree overflow reports `false`.
     #[must_use]
     pub fn is_weak_popov(&self, shifts: &[usize]) -> bool {
         let (rows, columns) = self.shape();
@@ -108,7 +114,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         }
         let mut seen = alloc::vec![false; columns];
         for row in 0..rows {
-            match self.leading_key(row, shifts) {
+            let key = self.leading_key(row, shifts).unwrap_or(None);
+            match key {
                 None => {}
                 Some((_, column)) => {
                     if seen[column] {
@@ -123,6 +130,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
 
     /// Reports whether the matrix is weak Popov with nonzero rows ordered
     /// by increasing leading column and zero rows last.
+    ///
+    /// A shifted-degree overflow reports `false`.
     #[must_use]
     pub fn is_ordered_weak_popov(&self, shifts: &[usize]) -> bool {
         if !self.is_weak_popov(shifts) {
@@ -132,7 +141,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         let mut last_column: Option<usize> = None;
         let mut seen_zero = false;
         for row in 0..rows {
-            match self.leading_key(row, shifts) {
+            let key = self.leading_key(row, shifts).unwrap_or(None);
+            match key {
                 None => seen_zero = true,
                 Some((_, column)) => {
                     if seen_zero {
@@ -151,6 +161,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     /// Reports whether the matrix is canonical row Popov: ordered weak
     /// Popov with monic pivots and every other entry in each pivot column
     /// strictly below the pivot degree.
+    ///
+    /// A shifted-degree overflow reports `false`.
     #[must_use]
     pub fn is_popov(&self, shifts: &[usize]) -> bool {
         if !self.is_ordered_weak_popov(shifts) {
@@ -158,7 +170,10 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         }
         let (rows, _) = self.shape();
         for pivot in 0..rows {
-            let Some((_, pivot_column)) = self.leading_key(pivot, shifts) else {
+            let Ok(key) = self.leading_key(pivot, shifts) else {
+                return false;
+            };
+            let Some((_, pivot_column)) = key else {
                 continue;
             };
             let pivot_entry = self.entry(pivot, pivot_column).cloned().unwrap_or_default();
@@ -198,7 +213,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             if factor.is_zero() {
                 continue;
             }
-            let Some((shifted, _)) = self.leading_key(row, shifts) else {
+            let Ok(Some((shifted, _))) = self.leading_key(row, shifts) else {
                 continue;
             };
             let candidate = shifted.checked_add(factor.degree()?)?;
@@ -209,7 +224,11 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         best
     }
 
-    fn leading_key(&self, row: usize, shifts: &[usize]) -> Option<(usize, usize)> {
+    fn leading_key(
+        &self,
+        row: usize,
+        shifts: &[usize],
+    ) -> Result<Option<(usize, usize)>, MatrixError> {
         let (_, columns) = self.shape();
         let mut best: Option<(usize, usize)> = None;
         for (column, &shift) in shifts.iter().enumerate().take(columns) {
@@ -219,16 +238,16 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             let Some(degree) = entry.degree() else {
                 continue;
             };
-            let Some(shifted) = degree.checked_add(shift) else {
-                continue;
-            };
+            let shifted = degree.checked_add(shift).ok_or(MatrixError::Reduction(
+                ReduceError::DegreeOverflow { degree, shift },
+            ))?;
             if best.is_none_or(|(best_shifted, best_column)| {
                 (shifted, column) > (best_shifted, best_column)
             }) {
                 best = Some((shifted, column));
             }
         }
-        best
+        Ok(best)
     }
 
     fn canonicalize_popov(&mut self, shifts: &[usize]) -> Result<(), MatrixError> {
@@ -236,7 +255,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             let (rows, columns) = self.shape();
             let mut pivots: Vec<(usize, usize, usize)> = Vec::new();
             for row in 0..rows {
-                if let Some((shifted, column)) = self.leading_key(row, shifts) {
+                if let Some((shifted, column)) = self.leading_key(row, shifts)? {
                     let degree = self
                         .entry(row, column)
                         .and_then(Polynomial::degree)
@@ -316,7 +335,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             let (rows, columns) = self.shape();
             let mut pivots: Vec<(usize, usize, usize)> = Vec::new();
             for row in 0..rows {
-                if let Some((_, column)) = self.leading_key(row, shifts) {
+                if let Some((_, column)) = self.leading_key(row, shifts)? {
                     let degree = self
                         .entry(row, column)
                         .and_then(Polynomial::degree)

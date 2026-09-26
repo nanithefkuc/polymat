@@ -12,15 +12,16 @@
 //! come from the unchanged current basis. When all vanish the basis is
 //! kept. Otherwise the pivot minimizes its shifted row-leading pair
 //! `(shifted degree, leading column)`, then row index, among
-//! nonzero-discrepancy rows; every other such row cancels against the OLD
+//! nonzero-discrepancy rows; every other such row cancels against the old
 //! pivot row, and the pivot multiplies by `x` last. Degrees and leading
 //! metadata recompute before the next constraint, so all previously
 //! imposed constraints stay satisfied and the basis spans their entire
 //! solution module.
 //!
-//! Every independent scalar constraint raises the module index and the
-//! determinant degree by one; redundant constraints do neither. The
-//! constructor reports the independent-constraint count for verification.
+//! Every independent scalar constraint multiplies the module index by
+//! the field size and raises the determinant degree by one; redundant
+//! constraints do neither. The constructor reports the
+//! independent-constraint count for verification.
 
 use alloc::vec::Vec;
 
@@ -49,9 +50,9 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     ///
     /// # Errors
     ///
-    /// Returns [`MatrixError::GeometryOverflow`] when the order or shift
-    /// counts disagree with the shape, plus polynomial and reduction
-    /// errors.
+    /// Returns [`MatrixError::GeometryOverflow`] when the order count
+    /// disagrees with the shape, [`MatrixError::ShiftCount`] when the
+    /// shift count does, plus polynomial and reduction errors.
     pub fn approximant_basis(
         &self,
         orders: &[usize],
@@ -115,7 +116,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             if discrepancy.is_zero() {
                 continue;
             }
-            let key = Self::shifted_row_key(basis, row, shifts);
+            let key = Self::shifted_row_key(basis, row, shifts)?;
             if pivot_key.is_none_or(|current| key < current) {
                 pivot_key = Some(key);
                 pivot = Some(row);
@@ -180,11 +181,15 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
 
     /// Returns the shifted row-leading pair `(shifted degree, column)` of
     /// a basis row, or `MAX` when the row is zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MatrixError::Reduction`] on shifted-degree overflow.
     fn shifted_row_key(
         basis: &PolynomialMatrix<F>,
         row: usize,
         shifts: &[usize],
-    ) -> (usize, usize) {
+    ) -> Result<(usize, usize), MatrixError> {
         let (_, columns) = basis.shape();
         let mut best: Option<(usize, usize)> = None;
         for (column, &shift) in shifts.iter().enumerate().take(columns) {
@@ -194,13 +199,15 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             let Some(degree) = entry.degree() else {
                 continue;
             };
-            let Some(shifted) = degree.checked_add(shift) else {
-                continue;
-            };
-            if best.is_none_or(|current| (shifted, column) < current) {
+            let shifted = degree.checked_add(shift).ok_or(MatrixError::Reduction(
+                crate::ReduceError::DegreeOverflow { degree, shift },
+            ))?;
+            if best.is_none_or(|(best_shifted, best_column)| {
+                (shifted, column) > (best_shifted, best_column)
+            }) {
                 best = Some((shifted, column));
             }
         }
-        best.unwrap_or((usize::MAX, usize::MAX))
+        Ok(best.unwrap_or((usize::MAX, usize::MAX)))
     }
 }

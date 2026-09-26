@@ -87,8 +87,7 @@ fn scalar_recurrence_matches_congruence_oracle() {
 
 #[test]
 fn unequal_and_repeated_orders_agree() {
-    // F = I_2 with orders [2, 1]: solutions are (x^2)*e0, x*e1 spans;
-    // repeating the first column constraint adds no independent row.
+    // F = I_2 with orders [2, 1]: solutions are (x^2)*e0, x*e1 spans.
     let identity = PolynomialMatrix::from_entries(
         2,
         2,
@@ -158,9 +157,9 @@ fn unbalanced_shifts_and_odd_characteristic_agree() {
 
 #[test]
 fn determinant_degree_counts_independent_constraints() {
-    // F = [[1],[1]] with orders [1]: one independent constraint (the two
-    // constant terms must be equal... verified against the oracle), and a
-    // repeated identical column adds only redundant constraints.
+    // F = [[1],[1]] with orders [1]: the two constant terms must agree,
+    // so exactly one independent constraint; doubling the column adds one
+    // more independent constraint at most.
     let input = PolynomialMatrix::from_entries(2, 1, alloc::vec![poly_b(&[b(1)]), poly_b(&[b(1)])])
         .unwrap();
     let single = input.approximant_basis(&[1], &[0, 0]).unwrap();
@@ -180,7 +179,12 @@ fn determinant_degree_counts_independent_constraints() {
     let moduli = alloc::vec![poly_b(&[b(0), b(1)]), poly_b(&[b(0), b(1)])];
     let oracle = doubled_input.congruence_basis(&moduli, &[0, 0]).unwrap();
     assert_eq!(doubled.basis, oracle);
-    assert!(doubled.independent_constraints < 2 + 2);
+    assert_eq!(doubled.independent_constraints, 1);
+    // Popov diagonal degrees sum to the determinant degree.
+    let diagonal: usize = (0..2)
+        .map(|row| doubled.basis.entry(row, row).unwrap().degree().unwrap_or(0))
+        .sum();
+    assert_eq!(diagonal, doubled.independent_constraints);
 }
 
 extern crate alloc;

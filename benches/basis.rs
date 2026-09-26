@@ -1,10 +1,9 @@
-//! Public-API basis workloads at consumer geometry.
+//! Public-API basis workloads on representative small shapes.
 //!
-//! Shapes follow the Guruswami–Sudan interpolation modules the engine
-//! reduces: `(multiplicity + 1)` rows over `(max_degree + 1)`-ish columns
-//! with nonuniform column shifts, plus a coupled-congruence shape for the
-//! planned power decoder. No decoder throughput is claimed; the workloads
-//! time the module operations a consumer calls.
+//! Small dense matrices with nonuniform shifts and per-column orders stand
+//! in for interpolation-module geometry; they are approximations, not
+//! wired engine plans. The workloads time the module operations a consumer
+//! calls without claiming decoder throughput.
 
 use core::time::Duration;
 use std::hint::black_box;

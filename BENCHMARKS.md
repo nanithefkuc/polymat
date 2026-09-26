@@ -1,21 +1,18 @@
 # Benchmarks
 
-Public-API basis timings at consumer geometry. The crate ships one
+Public-API basis timings on representative small shapes. The crate ships one
 strategy per operation — scalar weak-Popov reduction, the scalar
-discrepancy recurrence for approximants, Hasse interpolation, and the
-block-kernel congruence oracle — so there is no crossover or dispatch
-decision to record. The scalar paths are the retained correctness
-controls; a faster basis strategy promotes only with a same-session
-pinned baseline/control pair per the measurement policy.
+discrepancy recurrence for approximants, and canonical Popov reduction —
+so there is no crossover or dispatch decision to record.
 
 | Workload | Field | Time (ns) |
 | --- | --- | --- |
-| `weak_popov` 3x4 shifts 0,3,6,9 | GF(8) binary | 320 |
-| `approximant` 4x3 orders 4,3,5 | GF(8) binary | 10672 |
-| `popov` 3x4 shifts 0,3,6,9 | GF(8) binary | 1118 |
-| `weak_popov` 3x4 shifts 0,3,6,9 | GF(16) binary | 2845 |
-| `approximant` 4x3 orders 4,3,5 | GF(16) binary | 18886 |
-| `popov` 3x4 shifts 0,3,6,9 | GF(16) binary | 5190 |
+| `weak_popov` 3x4 shifts 0,3,6,9 | GF(2^8) | 320 |
+| `approximant` 4x3 orders 4,3,5 | GF(2^8) | 10672 |
+| `popov` 3x4 shifts 0,3,6,9 | GF(2^8) | 1118 |
+| `weak_popov` 3x4 shifts 0,3,6,9 | GF(2^16) | 2845 |
+| `approximant` 4x3 orders 4,3,5 | GF(2^16) | 18886 |
+| `popov` 3x4 shifts 0,3,6,9 | GF(2^16) | 5190 |
 
 Caveats and measurement details:
 
@@ -25,14 +22,8 @@ Caveats and measurement details:
   are rounded to whole nanoseconds.
 - Workloads live in `benches/basis.rs`: cloned inputs per iteration
   (allocation outside the reducer is included), shifts and orders as
-  tabulated.
-- The approximant workload constructs the full discrepancy recurrence
-  with per-constraint residual products; the profile is dominated by
-  `poly-ring` residual multiplication, not schedule overhead, so no
-  divide-and-conquer candidate is proposed from this round.
-- No faster basis strategy is promoted: one scalar strategy per
-  operation stands, with the scalar paths retained as correctness
-  oracles for later optimization work.
+  tabulated. Shapes approximate interpolation-module geometry; they are
+  not wired engine plans.
 
 ## Competitors
 

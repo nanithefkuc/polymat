@@ -8,9 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- Criterion `basis` workloads at consumer interpolation geometry with
-  pinned baseline timings recorded in `BENCHMARKS.md`; no faster basis
-  strategy is promoted and the scalar paths stand as correctness oracles.
+- Criterion `basis` workloads on representative small shapes with
+  pinned baseline timings recorded in `BENCHMARKS.md`.
 - Hermite/Smith normal forms, determinant, and inverse: `hermite_form`
   with the leftmost-pivot convention and `U A = H`, `smith_form` with
   monic divisibility-ordered invariants and `U A V = D` via Euclidean

@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Confluent interpolation and Padé relations: `interpolation_basis`
+  imposes merged `(point, column, multiplicity)` Hasse constraints with
+  the old-pivot/`(x - point)` recurrence and cross-checks against
+  `interpolation_moduli` congruence products and zero-point
+  approximants; thin `pade_relation`/`simultaneous_pade`/`hermite_pade`
+  constructors carry explicit numerator/denominator orientation, with
+  selection failure on singular-block data rather than decoder verdicts.
 - Scalar shifted approximant bases: `approximant_basis` runs the
   discrepancy recurrence from `I_m` over per-column orders (zero orders
   impose nothing), picks the minimum shifted-leading pivot, cancels

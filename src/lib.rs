@@ -17,6 +17,7 @@ extern crate alloc;
 mod approximant;
 mod congruence;
 mod error;
+mod interpolation;
 mod kernel;
 mod matrix;
 mod popov;
@@ -28,6 +29,7 @@ pub mod internals;
 pub use approximant::ApproximantBasis;
 pub use congruence::CongruenceCertificate;
 pub use error::ReduceError;
+pub use interpolation::{InterpolationBasis, InterpolationConstraint, PadeRelation};
 pub use kernel::{ExactSolution, MembershipWitness};
 pub use matrix::{MatrixError, PolynomialMatrix, ShiftPreparation};
 pub use reduction::{

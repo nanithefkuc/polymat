@@ -10,6 +10,7 @@
 
 use alloc::vec::Vec;
 
+use fgf::field::Elem;
 use fgf::kernel::FieldKernels;
 use poly_ring::Polynomial;
 
@@ -84,14 +85,10 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
                 }
             }
         }
-        let rows_out = if self.shape().0 == 0 {
-            0
-        } else {
-            generators.len() / self.shape().0
-        };
         if generators.is_empty() {
             return PolynomialMatrix::zeros(0, self.shape().0);
         }
+        let rows_out = generators.len() / self.shape().0.max(1);
         PolynomialMatrix::from_entries(rows_out, self.shape().0, generators)
     }
 
@@ -99,6 +96,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     /// satisfies `self * n == 0`, returned as rows of the transposed
     /// problem. The transpose carries zero shifts: column operations on the
     /// input are row operations on the transpose with no column weighting.
+    /// The `shifts` argument is ignored; any length and value is accepted
+    /// without effect.
     ///
     /// The output has one row per kernel generator and `n` columns, where
     /// `n` is the input column count; it is empty when the columns are
@@ -146,13 +145,6 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         let mut remainder: Vec<Polynomial<F>> = target.to_vec();
         let mut quotients: Vec<Polynomial<F>> = alloc::vec![Polynomial::zero(); rows];
         while let Some((column, degree, coefficient)) = leading_at(&remainder, shifts) {
-            // `leading_at` observes only the first `shifts.len()` entries;
-            // a target longer than the shift vector has no reduction rule.
-            if column >= shifts.len() {
-                return Err(MatrixError::GeometryOverflow {
-                    context: "membership irreducible remainder",
-                });
-            }
             let Some((pivot, pivot_degree, pivot_coefficient)) = pivots.iter().find_map(|pivot| {
                 (pivot.column == column && pivot.degree <= degree).then_some((
                     pivot.row,
@@ -194,9 +186,10 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     /// Returns a particular polynomial solution plus the complete
     /// right-kernel basis. The equation `x z == 1` has no polynomial
     /// solution and reports non-membership; `x z == x` solves with `1`.
+    /// The `shifts` argument drives only the returned kernel; the solve
+    /// itself reduces the transpose under zero shifts.
     ///
     /// # Errors
-    ///
     /// Returns the same errors as [`PolynomialMatrix::membership_weak_popov`]
     /// and [`PolynomialMatrix::right_kernel_weak_popov`].
     ///
@@ -340,9 +333,15 @@ fn leading_at<F: FieldKernels>(
 ) -> Option<(usize, usize, F::Elem)> {
     let mut best: Option<(usize, usize, F::Elem)> = None;
     for (column, entry) in row.iter().enumerate() {
-        let shift = *shifts.get(column)?;
-        let degree = entry.degree()?;
-        let shifted = degree.checked_add(shift)?;
+        let Some(&shift) = shifts.get(column) else {
+            continue;
+        };
+        let Some(degree) = entry.degree() else {
+            continue;
+        };
+        let Some(shifted) = degree.checked_add(shift) else {
+            continue;
+        };
         let coefficient = entry.coefficient(degree);
         if best.is_none_or(|(best_column, current, _)| (shifted, column) > (current, best_column)) {
             best = Some((column, shifted, coefficient));
@@ -353,5 +352,3 @@ fn leading_at<F: FieldKernels>(
         (column, shifted - shift, coefficient)
     })
 }
-
-use fgf::field::Elem;

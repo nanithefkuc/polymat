@@ -277,4 +277,71 @@ fn wrong_length_targets_and_shifts_are_rejected() {
     assert!(basis.rank_weak_popov(&[0]).is_err());
 }
 
+#[test]
+fn identity_membership_and_solve_cover_zero_entries() {
+    // Regression: the leading-term scan once returned `None` at the first
+    // zero entry instead of skipping it, rejecting `[1, 0]` in `I_2`.
+    let basis = matrix(
+        2,
+        2,
+        alloc::vec![
+            poly(&[b(1)]),
+            Polynomial::zero(),
+            Polynomial::zero(),
+            poly(&[b(1)]),
+        ],
+    );
+    let mut reduced = basis.clone();
+    reduced.reduce_weak_popov(&[0, 0]).unwrap();
+    let target = alloc::vec![poly(&[b(1)]), Polynomial::zero()];
+    let witness = reduced.membership_weak_popov(&target, &[0, 0]).unwrap();
+    assert_eq!(witness.quotients.len(), 2);
+    let solution = basis.solve_weak_popov(&target, &[0, 0]).unwrap();
+    assert_eq!(solution.particular, target);
+}
+
+#[test]
+fn odd_characteristic_membership_uses_signed_cancellation() {
+    use fgf::{Mersenne31, mersenne31};
+    fn q(value: u32) -> <Mersenne31 as Field>::Elem {
+        mersenne31::Elem::from_raw(value)
+    }
+    fn qpoly(coefficients: &[<Mersenne31 as Field>::Elem]) -> Polynomial<Mersenne31> {
+        Polynomial::from_coefficients(coefficients).unwrap()
+    }
+    // Basis [[2+x, 0],[0, 1]] is reduced; target [(3+x)(2+x), 5] needs
+    // the negative cancelling ratio (in characteristic two negation is
+    // the identity, so only this fixture exercises the sign).
+    let mut basis = PolynomialMatrix::from_entries(
+        2,
+        2,
+        alloc::vec![
+            qpoly(&[q(2), q(1)]),
+            Polynomial::zero(),
+            Polynomial::zero(),
+            qpoly(&[q(1)]),
+        ],
+    )
+    .unwrap();
+    basis.reduce_weak_popov(&[0, 0]).unwrap();
+    let factor = qpoly(&[q(3), q(1)]);
+    let target = alloc::vec![
+        factor.multiply(&qpoly(&[q(2), q(1)])).unwrap(),
+        qpoly(&[q(5)]),
+    ];
+    let witness = basis.membership_weak_popov(&target, &[0, 0]).unwrap();
+    let mut rebuilt = alloc::vec![Polynomial::zero(), Polynomial::zero()];
+    for (row, quotient) in witness.quotients.iter().enumerate() {
+        for (column, slot) in rebuilt.iter_mut().enumerate() {
+            let term = basis
+                .entry(row, column)
+                .unwrap()
+                .multiply(quotient)
+                .unwrap();
+            slot.add_assign(&term).unwrap();
+        }
+    }
+    assert_eq!(rebuilt, target);
+}
+
 extern crate alloc;

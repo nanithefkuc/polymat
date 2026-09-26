@@ -14,8 +14,8 @@
 //! divided by factorials, so multiplicities at and above the
 //! characteristic are sound.
 //!
-//! The Padé constructors are thin module relations over the same
-//! congruence primitive with explicit signs and numerator/denominator
+//! The Padé constructors are thin module relations over the scalar
+//! approximant recurrence with explicit signs and numerator/denominator
 //! orientation. They own no decoding radius, locator selection, or
 //! candidate policy.
 
@@ -74,8 +74,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     /// `constraints`, reduced to canonical shifted row Popov form.
     ///
     /// Constraints merge deterministically: same point and column keep the
-    /// maximum multiplicity; ordering is by column, then point bytes, then
-    /// multiplicity. `shifts` holds one entry per solution coordinate (`m`
+    /// maximum multiplicity; ordering is by column, then multiplicity,
+    /// with distinct points keeping first-appearance order. `shifts` holds one entry per solution coordinate (`m`
     /// entries). Every point/column pair must name an existing column; a
     /// zero multiplicity imposes nothing.
     ///
@@ -152,9 +152,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             for _ in 0..order {
                 factor = factor.multiply_x_plus(point.neg())?;
             }
-            let mut merged_modulus = moduli[column].clone();
-            merged_modulus = merged_modulus.multiply(&factor)?;
-            moduli[column] = merged_modulus;
+            let product = moduli[column].multiply(&factor)?;
+            moduli[column] = product;
         }
         Ok(moduli)
     }
@@ -278,7 +277,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     }
 
     /// Returns the shifted row-leading pair of a basis row for pivot
-    /// selection, or `MAX` when the row is zero.
+    /// selection: the shared approximant key.
     ///
     /// # Errors
     ///
@@ -288,25 +287,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         row: usize,
         shifts: &[usize],
     ) -> Result<(usize, usize), MatrixError> {
-        let (_, columns) = basis.shape();
-        let mut best: Option<(usize, usize)> = None;
-        for (column, &shift) in shifts.iter().enumerate().take(columns) {
-            let Some(entry) = basis.entry(row, column) else {
-                continue;
-            };
-            let Some(degree) = entry.degree() else {
-                continue;
-            };
-            let shifted = degree.checked_add(shift).ok_or(MatrixError::Reduction(
-                crate::ReduceError::DegreeOverflow { degree, shift },
-            ))?;
-            if best.is_none_or(|(best_shifted, best_column)| {
-                (shifted, column) > (best_shifted, best_column)
-            }) {
-                best = Some((shifted, column));
-            }
-        }
-        Ok(best.unwrap_or((usize::MAX, usize::MAX)))
+        PolynomialMatrix::shifted_row_key(basis, row, shifts)
     }
 
     /// Returns the scalar Padé relation for `series` of order `order`:
@@ -315,16 +296,20 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     /// of the requested degree.
     ///
     /// The relation is a length-2 approximant module row selected by the
-    /// shifted form: `F = [[series], [-1]]` with order `[order]` under
-    /// shifts `[0, numerator_bound]`. Basis row `[a, b]` satisfies
-    /// `a * series - b = 0`, so the denominator is entry 0 and the
-    /// numerator is entry 1. Selection needs normal data: a combination
-    /// may meet the bounds when no single row does, in which case this
-    /// reports selection failure rather than a decoder verdict.
+    /// balanced shifted form: `F = [[series], [-1]]` with order `[order]`
+    /// under shifts `[numerator_degree, denominator_degree]`, where
+    /// `numerator_degree = order - denominator_degree - 1`. Basis row
+    /// `[a, b]` satisfies `a * series - b = 0`, so the denominator is
+    /// entry 0 and the numerator is entry 1. The predictable-degree
+    /// property guarantees the minimum-shifted-degree row meets the
+    /// bounds whenever any solution does; requiring the denominator
+    /// degree exactly is a post-check that fails honestly on
+    /// degree-dropping data.
     ///
     /// # Errors
     ///
-    /// Returns polynomial and reduction errors.
+    /// Returns [`MatrixError::GeometryOverflow`] when no row meets the
+    /// degree bounds, plus polynomial and reduction errors.
     pub fn pade_relation(
         series: &Polynomial<F>,
         order: usize,
@@ -338,7 +323,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             alloc::vec![series.clone(), Polynomial::one()?.negated()],
         )?;
         let numerator_bound = order.saturating_sub(denominator_degree);
-        let result = input.approximant_basis(&[order], &[0, numerator_bound])?;
+        let numerator_degree = numerator_bound.saturating_sub(1);
+        let result = input.approximant_basis(&[order], &[numerator_degree, denominator_degree])?;
         let row = Self::select_pade_row(&result.basis, denominator_degree, numerator_bound)?;
         Ok(PadeRelation {
             denominator: result.basis.entry(row, 0).cloned().unwrap_or_default(),
@@ -373,27 +359,97 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     }
 
     /// Returns simultaneous Padé relations for `series` with a shared
-    /// denominator of `denominator_degree`: row `i` of the output holds
+    /// denominator of `denominator_degree`: entry `i` of the output holds
     /// `(numerator_i, denominator)` with
     /// `numerator_i - series[i] * denominator = 0` modulo `x^order`.
     ///
-    /// Built over the stacked module `F = [diag(series), -1]` with orders
-    /// `[order; n+1]` under shifts weighting the shared denominator last.
+    /// Built over the stacked module with unknowns
+    /// `(numerators.., denominator)`: `F` is `(k+1)`-by-`k` with
+    /// `F[i,j] = delta[i,j]` and `F[k,j] = -series[j]`, orders
+    /// `[order; k]`, balanced shifts `[denominator_degree; k]` then
+    /// `numerator_degree` with `numerator_degree = bound - 1` and
+    /// `bound = order - denominator_degree`. The selected basis row has
+    /// last-coordinate (denominator) degree exactly `denominator_degree`
+    /// and every numerator below `bound`.
     ///
     /// # Errors
     ///
-    /// Returns polynomial and reduction errors.
+    /// Returns [`MatrixError::GeometryOverflow`] for an empty series or
+    /// no row meeting the degree bounds, plus polynomial and reduction
+    /// errors.
     pub fn simultaneous_pade(
         series: &[Polynomial<F>],
         order: usize,
         denominator_degree: usize,
     ) -> Result<Vec<PadeRelation<F>>, MatrixError> {
-        let count = series.len();
-        let mut relations = Vec::with_capacity(count);
-        for target in series {
-            relations.push(Self::pade_relation(target, order, denominator_degree)?);
+        if series.is_empty() {
+            return Err(MatrixError::GeometryOverflow {
+                context: "simultaneous-pade empty series",
+            });
         }
-        Ok(relations)
+        let count = series.len();
+        let bound = order.saturating_sub(denominator_degree);
+        let numerator_degree = bound.saturating_sub(1);
+        let one = Polynomial::one().map_err(MatrixError::Polynomial)?;
+        let mut entries = alloc::vec![Polynomial::zero(); (count + 1) * count];
+        for (index, target) in series.iter().enumerate() {
+            entries[index * count + index].clone_from(&one);
+            entries[count * count + index] = target.negated();
+        }
+        let input = PolynomialMatrix::from_entries(count + 1, count, entries)?;
+        let orders = alloc::vec![order; count];
+        let mut shifts = alloc::vec![denominator_degree; count];
+        shifts.push(numerator_degree);
+        let result = input.approximant_basis(&orders, &shifts)?;
+        let row = Self::select_simultaneous_row(&result.basis, denominator_degree, bound)?;
+        let denominator = result.basis.entry(row, count).cloned().unwrap_or_default();
+        series
+            .iter()
+            .enumerate()
+            .map(|(index, _)| {
+                Ok(PadeRelation {
+                    numerator: result.basis.entry(row, index).cloned().unwrap_or_default(),
+                    denominator: denominator.clone(),
+                })
+            })
+            .collect()
+    }
+
+    /// Selects the stacked row with shared-denominator degree exactly
+    /// `denominator_degree` and every numerator below `bound`.
+    fn select_simultaneous_row(
+        basis: &PolynomialMatrix<F>,
+        denominator_degree: usize,
+        bound: usize,
+    ) -> Result<usize, MatrixError> {
+        let (rows, columns) = basis.shape();
+        if columns == 0 {
+            return Err(MatrixError::GeometryOverflow {
+                context: "simultaneous-pade empty series",
+            });
+        }
+        for row in 0..rows {
+            let denominator = basis.entry(row, columns - 1).cloned().unwrap_or_default();
+            if denominator.degree() != Some(denominator_degree)
+                && !(denominator_degree == 0 && denominator.is_zero())
+            {
+                continue;
+            }
+            let mut ok = true;
+            for column in 0..columns - 1 {
+                let numerator = basis.entry(row, column).cloned().unwrap_or_default();
+                if numerator.degree().is_some_and(|degree| degree >= bound) {
+                    ok = false;
+                    break;
+                }
+            }
+            if ok {
+                return Ok(row);
+            }
+        }
+        Err(MatrixError::GeometryOverflow {
+            context: "simultaneous-pade relation selection",
+        })
     }
 
     /// Returns the Hermite-Padé relation for `series` with per-row degree
@@ -401,13 +457,15 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     /// `x^order` with `degree(relation[i]) < bounds[i]`.
     ///
     /// Built as the approximant basis of the row `F = [series]` under
-    /// shifts `max_bound - bounds[i]`, returning the minimum-shifted-degree
-    /// basis row.
+    /// shifts `max_bound - bounds[i]`, returning the minimum-degree basis
+    /// row that satisfies every bound; the shifts guarantee a compliant
+    /// row exists whenever any solution does.
     ///
     /// # Errors
     ///
-    /// Returns [`MatrixError::GeometryOverflow`] for an empty series or a
-    /// bound count mismatch, plus polynomial and reduction errors.
+    /// Returns [`MatrixError::GeometryOverflow`] for an empty series, a
+    /// bound count mismatch, or no compliant basis row, plus polynomial
+    /// and reduction errors.
     pub fn hermite_pade(
         series: &[Polynomial<F>],
         order: usize,
@@ -423,7 +481,8 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         let input = PolynomialMatrix::from_entries(1, series.len(), series.to_vec())?;
         let transposed = input.transposed()?;
         let result = transposed.approximant_basis(&alloc::vec![order], &shifts)?;
-        // Return the minimum-max-degree row across the basis.
+        // Return the minimum-max-degree row across the basis rows that
+        // satisfy every per-coordinate bound; normal data carries one.
         let mut best: Option<Vec<Polynomial<F>>> = None;
         let mut best_degree: Option<usize> = None;
         for candidate in 0..series.len() {
@@ -436,6 +495,16 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
                         .unwrap_or_default()
                 })
                 .collect();
+            let mut compliant = true;
+            for (entry, &bound) in row_vec.iter().zip(bounds) {
+                if entry.degree().is_some_and(|degree| degree >= bound) {
+                    compliant = false;
+                    break;
+                }
+            }
+            if !compliant {
+                continue;
+            }
             let degree = row_vec.iter().filter_map(Polynomial::degree).max();
             if best_degree.is_none_or(|current| degree < Some(current)) {
                 best_degree = degree;

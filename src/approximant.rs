@@ -185,7 +185,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     /// # Errors
     ///
     /// Returns [`MatrixError::Reduction`] on shifted-degree overflow.
-    fn shifted_row_key(
+    pub(crate) fn shifted_row_key(
         basis: &PolynomialMatrix<F>,
         row: usize,
         shifts: &[usize],

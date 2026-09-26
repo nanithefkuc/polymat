@@ -45,3 +45,10 @@ strip = "none"
 [[test]]
 name = "normal_oracle"
 required-features = ["internals"]
+
+[dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "basis"
+harness = false

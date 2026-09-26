@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Certified kernels and exact solving: `rank_weak_popov`,
+  `reduced_leading_columns` with verified-reduced contracts,
+  `left_kernel_weak_popov`/`right_kernel_weak_popov` with `K A = 0` /
+  `A N = 0` and rank-nullity, `membership_weak_popov` with polynomial
+  quotient witnesses, and `solve_weak_popov` returning a particular
+  solution plus the complete right-kernel module through the transpose
+  membership identity with the `U` back-mapping. `x z = 1` reports
+  non-membership.
 - Owned `PolynomialMatrix` over `poly-ring` polynomials: explicit m-by-n
   row-major storage with 0-by-n and m-by-0 shapes, checked construction and
   normalization-preserving setters, transpose, destination-first

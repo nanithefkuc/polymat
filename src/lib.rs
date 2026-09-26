@@ -15,6 +15,7 @@
 extern crate alloc;
 
 mod error;
+mod kernel;
 mod matrix;
 mod reduction;
 
@@ -22,6 +23,7 @@ mod reduction;
 pub mod internals;
 
 pub use error::ReduceError;
+pub use kernel::{ExactSolution, MembershipWitness};
 pub use matrix::{MatrixError, PolynomialMatrix, ShiftPreparation};
 pub use reduction::{
     PopovLeadingTerm, WeakPopovBasis, WeakPopovRow, WeakPopovScratch, weak_popov,

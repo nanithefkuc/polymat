@@ -6,8 +6,9 @@
 
 `polymat` owns matrices and finitely generated row modules over Fq[x]. Its
 public surface holds an owned row-major `PolynomialMatrix` with checked
-construction and destination-first arithmetic alongside the shifted weak
-Popov reducer with the Mulders–Storjohann schedule. Row and indexed-basis
+construction, destination-first arithmetic, certified rank/kernel/
+membership/solve queries, and unimodular reduction witnesses alongside
+the shifted weak Popov reducer with the Mulders–Storjohann schedule. Row and indexed-basis
 adapters let a consumer retain a compact coefficient slab instead of
 allocating a second polynomial-matrix representation.
 

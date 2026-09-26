@@ -422,6 +422,39 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         weak_popov_basis_scratch::<F, _>(&mut adapter, shifts, &mut scratch)?;
         Ok(())
     }
+    /// Reduces the rows with an explicit unimodular transformation witness.
+    ///
+    /// Returns `U` with `U * self = R`, where `R` is `self` reduced to
+    /// shifted weak Popov form. `U` starts as the m-by-m identity and is
+    /// updated inside the row-update callback before the polynomial update
+    /// runs, so a polynomial failure leaves `U` one step ahead of `R`;
+    /// both matrices inherit the reducer's no-rollback contract. Only row
+    /// additions are tracked; no swaps or scalings are performed.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PolynomialMatrix::reduce_weak_popov`].
+    pub fn reduce_weak_popov_tracked(
+        &mut self,
+        shifts: &[usize],
+    ) -> Result<PolynomialMatrix<F>, MatrixError> {
+        if shifts.len() != self.columns {
+            return Err(MatrixError::ShiftCount {
+                columns: self.columns,
+                shifts: shifts.len(),
+            });
+        }
+        let mut transform = Self::identity(self.rows)?;
+        {
+            let mut adapter = TrackedRows {
+                matrix: self,
+                transform: &mut transform,
+            };
+            let mut scratch = crate::WeakPopovScratch::new();
+            weak_popov_basis_scratch::<F, _>(&mut adapter, shifts, &mut scratch)?;
+        }
+        Ok(transform)
+    }
 
     /// Reduces with signed shifts normalized by common-offset subtraction.
     ///
@@ -499,6 +532,71 @@ impl<F: FieldKernels> WeakPopovBasis<F> for MatrixRows<'_, F> {
         shift: usize,
         _shifts: &[usize],
     ) -> Result<(), Self::Error> {
+        let columns = self.matrix.columns;
+        let (target_base, pivot_base) = (target * columns, pivot * columns);
+        for column in 0..columns {
+            let (target_entry, pivot_entry) = if target_base + column < pivot_base + column {
+                let (lower, upper) = self.matrix.entries.split_at_mut(pivot_base + column);
+                (&mut lower[target_base + column], &upper[0])
+            } else {
+                let (lower, upper) = self.matrix.entries.split_at_mut(target_base + column);
+                (&mut upper[0], &lower[pivot_base + column])
+            };
+            target_entry.add_scaled_shifted_assign(scale, pivot_entry, shift)?;
+        }
+        Ok(())
+    }
+}
+
+/// Row view updating the transformation witness before the basis rows.
+///
+/// The witness has the same row count as the basis, so the same
+/// `split_at_mut` pattern borrows disjoint rows with no copied
+/// coefficients.
+struct TrackedRows<'a, F: FieldKernels> {
+    matrix: &'a mut PolynomialMatrix<F>,
+    transform: &'a mut PolynomialMatrix<F>,
+}
+
+impl<F: FieldKernels> WeakPopovBasis<F> for TrackedRows<'_, F> {
+    type Error = MatrixError;
+
+    fn row_count(&self) -> usize {
+        self.matrix.rows
+    }
+
+    fn column_count(&self, _row: usize) -> usize {
+        self.matrix.columns
+    }
+
+    fn degree(&self, row: usize, column: usize) -> Option<usize> {
+        self.matrix.entries[row * self.matrix.columns + column].degree()
+    }
+
+    fn coefficient(&self, row: usize, column: usize, degree: usize) -> F::Elem {
+        self.matrix.entries[row * self.matrix.columns + column].coefficient(degree)
+    }
+
+    fn add_scaled_shifted_assign(
+        &mut self,
+        target: usize,
+        pivot: usize,
+        scale: F::Elem,
+        shift: usize,
+        _shifts: &[usize],
+    ) -> Result<(), Self::Error> {
+        let rows = self.transform.rows;
+        let (target_base, pivot_base) = (target * rows, pivot * rows);
+        for column in 0..rows {
+            let (target_entry, pivot_entry) = if target_base + column < pivot_base + column {
+                let (lower, upper) = self.transform.entries.split_at_mut(pivot_base + column);
+                (&mut lower[target_base + column], &upper[0])
+            } else {
+                let (lower, upper) = self.transform.entries.split_at_mut(target_base + column);
+                (&mut upper[0], &lower[pivot_base + column])
+            };
+            target_entry.add_scaled_shifted_assign(scale, pivot_entry, shift)?;
+        }
         let columns = self.matrix.columns;
         let (target_base, pivot_base) = (target * columns, pivot * columns);
         for column in 0..columns {

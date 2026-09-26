@@ -23,14 +23,31 @@ use poly_ring::Polynomial;
 
 use crate::matrix::{MatrixError, PolynomialMatrix};
 
+/// A congruence module basis with its projection-completeness witness.
+///
+/// `block_kernel` holds the complete left kernel of `[F; -diag(M)]`
+/// and `block` the block itself, so a verifier recomputes
+/// `block_kernel * block == 0`, checks the kernel row count against
+/// the block row count minus its full column rank, and confirms `basis`
+/// rows are the kernel's first-`m` projections reduced to canonical form.
+#[derive(Debug, Clone)]
+pub struct CongruenceCertificate<F: FieldKernels> {
+    /// Canonical m-by-m module basis.
+    pub basis: PolynomialMatrix<F>,
+    /// Complete left kernel of the congruence block.
+    pub block_kernel: PolynomialMatrix<F>,
+    /// The `[F; -diag(M)]` block the kernel annihilates.
+    pub block: PolynomialMatrix<F>,
+}
+
 impl<F: FieldKernels> PolynomialMatrix<F> {
     /// Returns an m-by-m basis of the congruence module for `F = self`
-    /// with one nonzero modulus per column.
     ///
-    /// Each modulus normalizes to monic form; nonzero constants impose no
-    /// constraint and return the identity on completion. The output reduces
-    /// to canonical shifted row Popov form under `shifts`, which carries
-    /// one entry per solution coordinate (`m` entries).
+    /// Each modulus normalizes to monic form. When every modulus is a
+    /// nonzero constant, no constraint is effective and the output is the
+    /// identity. The output reduces to canonical shifted row Popov form
+    /// under `shifts`, which carries one entry per solution coordinate
+    /// (`m` entries).
     ///
     /// # Errors
     ///
@@ -42,6 +59,19 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         moduli: &[Polynomial<F>],
         shifts: &[usize],
     ) -> Result<PolynomialMatrix<F>, MatrixError> {
+        Ok(self.congruence_basis_certified(moduli, shifts)?.basis)
+    }
+
+    /// Returns the congruence basis with its completeness witness.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PolynomialMatrix::congruence_basis`].
+    pub fn congruence_basis_certified(
+        &self,
+        moduli: &[Polynomial<F>],
+        shifts: &[usize],
+    ) -> Result<CongruenceCertificate<F>, MatrixError> {
         let (rows, columns) = self.shape();
         if moduli.len() != columns {
             return Err(MatrixError::GeometryOverflow {
@@ -62,7 +92,14 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             });
         }
         if moduli.iter().all(|modulus| modulus.degree() == Some(0)) {
-            return PolynomialMatrix::identity(rows);
+            let basis = PolynomialMatrix::identity(rows)?;
+            let block = self.congruence_block(moduli)?;
+            let block_kernel = block.left_kernel_weak_popov(&alloc::vec![0; columns])?;
+            return Ok(CongruenceCertificate {
+                basis,
+                block_kernel,
+                block,
+            });
         }
         let block = self.congruence_block(moduli)?;
         let kernel = block.left_kernel_weak_popov(&alloc::vec![0; columns])?;
@@ -82,10 +119,16 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         } else {
             PolynomialMatrix::from_entries(generator_rows, rows, generators)?
         };
-        // The projected rows may be dependent or over-size the module;
-        // canonical reduction returns the full-rank m-by-m representative.
+        // The block has full column rank, so the projection yields exactly
+        // `rows` generators; canonical reduction preserves the row count.
+        // Zero rows pad any rank shortfall to the square m-by-m basis.
         basis.reduce_popov(shifts)?;
-        Self::complete_to_square(&basis, rows)
+        let basis = Self::complete_to_square(&basis, rows)?;
+        Ok(CongruenceCertificate {
+            basis,
+            block_kernel: kernel,
+            block,
+        })
     }
 
     /// Builds the `[F; -diag(M)]` block matrix in row orientation.

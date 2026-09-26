@@ -24,6 +24,7 @@ mod reduction;
 #[cfg(feature = "internals")]
 pub mod internals;
 
+pub use congruence::CongruenceCertificate;
 pub use error::ReduceError;
 pub use kernel::{ExactSolution, MembershipWitness};
 pub use matrix::{MatrixError, PolynomialMatrix, ShiftPreparation};

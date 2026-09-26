@@ -26,7 +26,7 @@ dependencies = [
 
 [[package]]
 name = "fgf"
-version = "1.1.1"
+version = "1.2.1"
 dependencies = [
  "archmage",
  "simdispatch",
@@ -94,12 +94,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d107c80dd656e1a2c254dfb1d57ece73b7f515b8a8684c270c23cab68f4a440d"
 
 [[patch.unused]]
-name = "gfm"
-version = "0.1.0"
+name = "poly-ring"
+version = "1.0.0"
 
 [[patch.unused]]
-name = "poly-ring"
-version = "0.1.0"
+name = "gfm"
+version = "1.0.1"
 
 [[patch.unused]]
 name = "butterfly-fft"

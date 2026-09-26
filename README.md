@@ -11,7 +11,8 @@ membership/solve queries, ordered and canonical Popov forms with
 validators, and unimodular reduction witnesses alongside the shifted
 weak Popov reducer with the Mulders–Storjohann schedule, and generic
 congruence modules (`p F = 0 mod M[j]`) through the block-kernel
-projection oracle. Row and indexed-basis
+projection oracle, and Hermite/Smith normal forms with determinant and
+unimodular inverse queries. Row and indexed-basis
 adapters let a consumer retain a compact coefficient slab instead of
 allocating a second polynomial-matrix representation.
 

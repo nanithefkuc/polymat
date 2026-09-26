@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Hermite/Smith normal forms, determinant, and inverse: `hermite_form`
+  with the leftmost-pivot convention and `U A = H`, `smith_form` with
+  monic divisibility-ordered invariants and `U A V = D` via Euclidean
+  row/column Bezout steps, Bareiss `determinant` with swap signs
+  cross-checked against the Leibniz oracle, `minor_gcd` determinantal
+  divisors, and `polynomial_inverse` for unimodular inputs only.
 - Confluent interpolation and Padé relations: `interpolation_basis`
   imposes merged `(point, column, multiplicity)` Hasse constraints with
   the old-pivot/`(x - point)` recurrence and cross-checks against

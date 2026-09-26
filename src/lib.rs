@@ -20,6 +20,7 @@ mod error;
 mod interpolation;
 mod kernel;
 mod matrix;
+mod normal;
 mod popov;
 mod reduction;
 
@@ -32,6 +33,7 @@ pub use error::ReduceError;
 pub use interpolation::{InterpolationBasis, InterpolationConstraint, PadeRelation};
 pub use kernel::{ExactSolution, MembershipWitness};
 pub use matrix::{MatrixError, PolynomialMatrix, ShiftPreparation};
+pub use normal::{HermiteForm, SmithForm};
 pub use reduction::{
     PopovLeadingTerm, WeakPopovBasis, WeakPopovRow, WeakPopovScratch, weak_popov,
     weak_popov_basis_scratch, weak_popov_scratch,

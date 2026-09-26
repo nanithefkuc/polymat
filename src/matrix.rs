@@ -10,8 +10,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::ReduceError;
-use crate::reduction::{PopovLeadingTerm, WeakPopovBasis, weak_popov_basis_scratch};
-use fgf::field::{Elem, Field};
+use crate::reduction::{WeakPopovBasis, weak_popov_basis_scratch};
 use fgf::kernel::FieldKernels;
 use poly_ring::{Polynomial, PolynomialError};
 
@@ -19,9 +18,10 @@ use poly_ring::{Polynomial, PolynomialError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MatrixError {
-    /// A row-column product overflowed `usize`.
+    /// A checked row, column, or degree product overflowed `usize`, or two
+    /// shapes disagreed.
     GeometryOverflow {
-        /// Static description of the overflowing product.
+        /// Static description of the failing check.
         context: &'static str,
     },
     /// Storage for entries or scratch could not be reserved.
@@ -45,6 +45,8 @@ pub enum MatrixError {
     },
     /// A supporting polynomial operation failed.
     Polynomial(PolynomialError),
+    /// An owned-basis reduction failed validation or termination.
+    Reduction(ReduceError),
 }
 
 impl fmt::Display for MatrixError {
@@ -64,18 +66,7 @@ impl From<PolynomialError> for MatrixError {
 
 impl From<ReduceError> for MatrixError {
     fn from(error: ReduceError) -> Self {
-        match error {
-            ReduceError::AllocationFailed { entries } => Self::AllocationFailed { entries },
-            ReduceError::ShiftCount { columns, shifts } => Self::ShiftCount { columns, shifts },
-            ReduceError::DegreeOverflow { .. } | ReduceError::Diverged { .. } => {
-                Self::GeometryOverflow {
-                    context: "shifted polynomial degree",
-                }
-            }
-            ReduceError::InvalidLeadingTerm { .. } => Self::GeometryOverflow {
-                context: "cached leading metadata",
-            },
-        }
+        Self::Reduction(error)
     }
 }
 
@@ -89,7 +80,7 @@ impl From<ReduceError> for MatrixError {
 pub struct ShiftPreparation {
     /// Nonnegative shifts driving the reducer.
     pub shifts: Vec<usize>,
-    /// Subtracted common minimum; zero when the input was already nonnegative.
+    /// Subtracted common minimum; equals the minimum input shift.
     pub offset: i64,
 }
 
@@ -111,12 +102,12 @@ impl ShiftPreparation {
             }
             (None, Some(_)) | (Some(_), None) => unreachable!("min and max agree on emptiness"),
         };
-        let span = usize::try_from(maximum - minimum)
+        let span = usize::try_from(i128::from(maximum) - i128::from(minimum))
             .map_err(|_| MatrixError::ShiftSpan { minimum, maximum })?;
         let _ = span;
         let mut normalized = Vec::with_capacity(shifts.len());
         for &shift in shifts {
-            let entry = usize::try_from(shift - minimum)
+            let entry = usize::try_from(i128::from(shift) - i128::from(minimum))
                 .map_err(|_| MatrixError::ShiftSpan { minimum, maximum })?;
             normalized.push(entry);
         }
@@ -142,7 +133,8 @@ pub struct PolynomialMatrix<F: FieldKernels> {
 }
 
 impl<F: FieldKernels> PolynomialMatrix<F> {
-    /// Builds an m-by-n matrix from row-major `entries`.
+    /// Builds an m-by-n matrix from row-major `entries`, normalizing each
+    /// entry to the canonical representation.
     ///
     /// # Errors
     ///
@@ -151,7 +143,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     pub fn from_entries(
         rows: usize,
         columns: usize,
-        entries: Vec<Polynomial<F>>,
+        mut entries: Vec<Polynomial<F>>,
     ) -> Result<Self, MatrixError> {
         let count = rows
             .checked_mul(columns)
@@ -162,6 +154,9 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
             return Err(MatrixError::GeometryOverflow {
                 context: "polynomial matrix entries",
             });
+        }
+        for entry in &mut entries {
+            entry.normalize();
         }
         Ok(Self {
             rows,
@@ -273,15 +268,16 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
 
     /// Writes `self + other` into `out`, leaving both inputs unchanged.
     ///
-    /// `out` is resized to the operand shape first, so a geometry failure
-    /// leaves every matrix unchanged; only a fallible polynomial addition
-    /// after successful reservation can report a later error.
+    /// The sum is staged in a fresh matrix and moved into `out` only after
+    /// every entry succeeds, so any failure leaves `out` unchanged.
+    /// Aliasing `out` with an input is rejected by the borrow checker: `out`
+    /// is borrowed mutably while the inputs are borrowed immutably.
     ///
     /// # Errors
     ///
     /// Returns [`MatrixError::GeometryOverflow`] for mismatched shapes or an
-    /// overflowing entry count, [`MatrixError::AllocationFailed`] when `out`
-    /// cannot be reserved, or the polynomial error.
+    /// overflowing entry count, [`MatrixError::AllocationFailed`] when the
+    /// staged matrix cannot be reserved, or the polynomial error.
     pub fn add_into(&self, other: &Self, out: &mut Self) -> Result<(), MatrixError> {
         self.checked_same_shape(other)?;
         let mut staged = Self::zeros(self.rows, self.columns)?;
@@ -297,8 +293,7 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
         Ok(())
     }
 
-    /// Writes `self - other` into `out` via scaled addition with a negated
-    /// unit coefficient.
+    /// Writes `self - other` into `out`.
     ///
     /// # Errors
     ///
@@ -306,16 +301,13 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     pub fn sub_into(&self, other: &Self, out: &mut Self) -> Result<(), MatrixError> {
         self.checked_same_shape(other)?;
         let mut staged = Self::zeros(self.rows, self.columns)?;
-        let negative_one = <F as Field>::Elem::ONE.neg();
         for ((left, right), target) in self
             .entries
             .iter()
             .zip(&other.entries)
             .zip(&mut staged.entries)
         {
-            let mut result = left.clone();
-            result.add_scaled_assign(negative_one, right)?;
-            *target = result;
+            *target = left.sub(right)?;
         }
         *out = staged;
         Ok(())
@@ -323,6 +315,9 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
 
     /// Writes the full product `self * other` into `out`, where
     /// `C[i,j] = sum_k A[i,k] B[k,j]` over Fq\[x\].
+    ///
+    /// The product is staged in a fresh matrix and moved into `out` only
+    /// after every entry succeeds, so any failure leaves `out` unchanged.
     ///
     /// # Errors
     ///
@@ -367,15 +362,11 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
                     let target = &mut staged.entries[row * other.columns + column];
                     if bound == usize::MAX {
                         let product = left.multiply(right)?;
-                        let mut next = target.clone();
-                        next.add_assign(&product)?;
-                        *target = next;
+                        target.add_assign(&product)?;
                     } else {
                         let product = left.multiply_truncated(right, bound)?;
-                        let mut next = target.clone();
-                        next.add_assign(&product)?;
-                        next.truncate(bound);
-                        *target = next;
+                        target.add_assign(&product)?;
+                        target.truncate(bound);
                     }
                 }
             }
@@ -410,7 +401,9 @@ impl<F: FieldKernels> PolynomialMatrix<F> {
     /// Reduces the rows to shifted weak Popov form with exactly `n` shifts.
     ///
     /// Zero rows are allowed; every nonzero result row has a distinct
-    /// leading column. On callback failure the matrix may be partially
+    /// leading column. Any failure reported after an applied row update,
+    /// including a callback failure and a later [`MatrixError::Reduction`]
+    /// validation or termination failure, may leave the matrix partially
     /// reduced; no rollback is performed.
     ///
     /// # Errors
@@ -496,37 +489,6 @@ impl<F: FieldKernels> WeakPopovBasis<F> for MatrixRows<'_, F> {
 
     fn coefficient(&self, row: usize, column: usize, degree: usize) -> F::Elem {
         self.matrix.entries[row * self.matrix.columns + column].coefficient(degree)
-    }
-
-    fn leading_term(
-        &self,
-        row: usize,
-        shifts: &[usize],
-    ) -> Result<Option<PopovLeadingTerm>, Self::Error> {
-        let mut leading: Option<PopovLeadingTerm> = None;
-        for (column, &shift) in shifts.iter().enumerate() {
-            if column >= self.matrix.columns {
-                continue;
-            }
-            let Some(degree) = self.degree(row, column) else {
-                continue;
-            };
-            let shifted = degree
-                .checked_add(shift)
-                .ok_or(ReduceError::DegreeOverflow { degree, shift })?;
-            let candidate = PopovLeadingTerm {
-                degree,
-                column,
-                shifted_degree: shifted,
-            };
-            if leading.is_none_or(|current: PopovLeadingTerm| {
-                (candidate.shifted_degree, candidate.column)
-                    > (current.shifted_degree, current.column)
-            }) {
-                leading = Some(candidate);
-            }
-        }
-        Ok(leading)
     }
 
     fn add_scaled_shifted_assign(

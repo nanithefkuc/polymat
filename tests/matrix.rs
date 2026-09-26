@@ -282,6 +282,31 @@ fn signed_shifts_match_equivalent_nonnegative_shifts() {
 }
 
 #[test]
+fn extreme_signed_spans_are_checked() {
+    let extreme = ShiftPreparation::from_signed(&[i64::MIN, 0]).unwrap();
+    assert_eq!(extreme.offset, i64::MIN);
+    assert_eq!(
+        extreme.shifts,
+        alloc::vec![0, usize::try_from(i64::MAX).unwrap() + 1]
+    );
+    let full = ShiftPreparation::from_signed(&[i64::MIN, i64::MAX]).unwrap();
+    assert_eq!(full.offset, i64::MIN);
+    assert_eq!(full.shifts, alloc::vec![0, usize::MAX]);
+    let preparation = ShiftPreparation::from_signed(&[3, 5]).unwrap();
+    assert_eq!(preparation.shifts, alloc::vec![0, 2]);
+    assert_eq!(preparation.offset, 3);
+}
+
+#[test]
+fn construction_normalizes_denormalized_entries() {
+    let mut denormalized = poly_b(&[b(1), b(2)]);
+    denormalized.resize_coefficients(4).unwrap();
+    assert_eq!(denormalized.degree(), Some(3));
+    let owned = matrix(1, 1, alloc::vec![denormalized]);
+    assert_eq!(owned.entry(0, 0).unwrap().degree(), Some(1));
+}
+
+#[test]
 fn owned_reduction_rejects_wide_shifts() {
     let mut basis = PolynomialMatrix::<Gf8B>::zeros(1, 2).unwrap();
     let error = basis.reduce_weak_popov(&[0]).unwrap_err();
@@ -326,36 +351,22 @@ fn identity_entry_accessors_and_error_display_hold() {
         assert!(!debug.is_empty());
     }
     let from_reduce: MatrixError = polymat::ReduceError::AllocationFailed { entries: 4 }.into();
-    assert_eq!(from_reduce, MatrixError::AllocationFailed { entries: 4 });
-    let from_shift: MatrixError = polymat::ReduceError::ShiftCount {
-        columns: 2,
-        shifts: 1,
-    }
-    .into();
     assert_eq!(
-        from_shift,
-        MatrixError::ShiftCount {
-            columns: 2,
-            shifts: 1
-        }
+        from_reduce,
+        MatrixError::Reduction(polymat::ReduceError::AllocationFailed { entries: 4 })
     );
     let from_degree: MatrixError = polymat::ReduceError::DegreeOverflow {
         degree: 1,
         shift: usize::MAX,
     }
     .into();
-    assert!(matches!(from_degree, MatrixError::GeometryOverflow { .. }));
-    let from_meta: MatrixError = polymat::ReduceError::InvalidLeadingTerm { row: 0 }.into();
-    assert!(matches!(from_meta, MatrixError::GeometryOverflow { .. }));
-    let from_diverged: MatrixError = polymat::ReduceError::Diverged {
-        iterations: 5,
-        ceiling: 4,
-    }
-    .into();
-    assert!(matches!(
-        from_diverged,
-        MatrixError::GeometryOverflow { .. }
-    ));
+    assert_eq!(
+        from_degree,
+        MatrixError::Reduction(polymat::ReduceError::DegreeOverflow {
+            degree: 1,
+            shift: usize::MAX,
+        })
+    );
 }
 
 extern crate alloc;

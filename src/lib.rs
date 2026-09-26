@@ -17,6 +17,7 @@ extern crate alloc;
 mod error;
 mod kernel;
 mod matrix;
+mod popov;
 mod reduction;
 
 #[cfg(feature = "internals")]

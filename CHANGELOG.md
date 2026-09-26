@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Ordered weak and canonical shifted Popov forms: `order_weak_popov` with
+  the applied row permutation, `reduce_popov` and `reduce_popov_tracked`
+  with `U A = R` through ordering, monic scaling, and pivot-column
+  reduction, `is_weak_popov`/`is_ordered_weak_popov`/`is_popov`
+  validators, and `predictable_degree` for reduced-row combinations.
+  Canonical nonzero rows are invariant under unimodular generator changes.
 - Certified kernels and exact solving: `rank_weak_popov`,
   `reduced_leading_columns` with verified-reduced contracts,
   `left_kernel_weak_popov`/`right_kernel_weak_popov` with `K A = 0` /
